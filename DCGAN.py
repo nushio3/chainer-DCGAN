@@ -1,10 +1,14 @@
 import pickle
 import numpy as np
 from PIL import Image
-import os
+import os,subprocess
 from StringIO import StringIO
 import math
-import pylab
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import scipy.ndimage
+
 
 
 import chainer
@@ -175,11 +179,13 @@ def train_dcgan_labeled(gen, dis, epoch0=0):
     zvis = xp.random.uniform(-1, 1, (100, nz)).astype(np.float32)
 
     for epoch in xrange(epoch0,n_epoch):
+        print "epoch:", epoch
         perm = np.random.permutation(n_train)
         sum_l_dis = np.float32(0)
         sum_l_gen = np.float32(0)
 
         for i in xrange(0, n_train, batchsize):
+            print i,
             # discriminator
             # 0: from dataset
             # 1: from noise
@@ -192,10 +198,17 @@ def train_dcgan_labeled(gen, dis, epoch0=0):
                     rnd2 = np.random.randint(2)
 
                     img = np.asarray(Image.open(StringIO(dataset[rnd])).convert('RGB')).astype(np.float32).transpose(2, 0, 1)
+                    # offset the image about the center of the image.
+                    oy = (img.shape[1]-96)/2
+                    ox = (img.shape[2]-96)/2
+                    oy=oy/2+np.random.randint(oy)
+                    ox=ox/2+np.random.randint(ox)
+
+                    # optionally, mirror the image.
                     if rnd2==0:
-                        x2[j,:,:,:] = (img[:,:,::-1]-128.0)/128.0
-                    else:
-                        x2[j,:,:,:] = (img[:,:,:]-128.0)/128.0
+                        img[:,:,:] = img[:,:,::-1]
+
+                    x2[j,:,:,:] = (img[:,oy:oy+96,ox:ox+96]-128.0)/128.0
                 except:
                     print 'read image error occured', fs[rnd]
             #print "load image done"
@@ -230,20 +243,27 @@ def train_dcgan_labeled(gen, dis, epoch0=0):
             #print "backward done"
 
             if i%image_save_interval==0:
-                pylab.rcParams['figure.figsize'] = (16.0,16.0)
-                pylab.clf()
+                plt.rcParams['figure.figsize'] = (16.0,16.0)
+                plt.close('all')
+
                 vissize = 100
                 z = zvis
                 z[50:,:] = (xp.random.uniform(-1, 1, (50, nz), dtype=np.float32))
                 z = Variable(z)
                 x = gen(z, test=True)
                 x = x.data.get()
+                imgfn = '%s/vis_%d_%d.png'%(out_image_dir, epoch,i)
+
+                print imgfn
                 for i_ in range(100):
                     tmp = ((np.vectorize(clip_img)(x[i_,:,:,:])+1)/2).transpose(1,2,0)
-                    pylab.subplot(10,10,i_+1)
-                    pylab.imshow(tmp)
-                    pylab.axis('off')
-                pylab.savefig('%s/vis_%d_%d.png'%(out_image_dir, epoch,i))
+                    plt.subplot(10,10,i_+1)
+                    plt.imshow(tmp)
+                    plt.axis('off')
+                plt.suptitle(imgfn)
+                plt.savefig(imgfn)
+
+                subprocess.call("cp %s ~/public_html/dcgan.png"%(imgfn),shell=True)
 
         serializers.save_hdf5("%s/dcgan_model_dis_%d.h5"%(out_model_dir, epoch),dis)
         serializers.save_hdf5("%s/dcgan_model_gen_%d.h5"%(out_model_dir, epoch),gen)
