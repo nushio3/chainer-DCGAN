@@ -131,26 +131,30 @@ class Generator(chainer.Chain):
 
 class Retoucher(chainer.Chain):
     def __init__(self):
-        super(Generator, self).__init__(
-            l0z = L.Linear(nz, 6*6*512, wscale=0.02*math.sqrt(nz)),
-            dc1 = L.Deconvolution2D(512, 256, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*512)),
+        super(Retoucher, self).__init__(
+            c0 = L.Convolution2D(3, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*3)),
+            c1 = L.Convolution2D(64, 128, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
+            c2 = L.Convolution2D(128, 256, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
             dc2 = L.Deconvolution2D(256, 128, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*256)),
-            dc3 = L.Deconvolution2D(128, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
-            dc4 = L.Deconvolution2D(64, 3, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
-            bn0l = L.BatchNormalization(6*6*512),
-            bn0 = L.BatchNormalization(512),
-            bn1 = L.BatchNormalization(256),
-            bn2 = L.BatchNormalization(128),
-            bn3 = L.BatchNormalization(64),
+            dc1 = L.Deconvolution2D(128, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
+            dc0 = L.Deconvolution2D(64, 3, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
+            bn0 = L.BatchNormalization(64),
+            bn1 = L.BatchNormalization(128),
+            bn2 = L.BatchNormalization(256)
         )
         
-    def __call__(self, z, test=False):
-        h = F.reshape(F.relu(self.bn0l(self.l0z(z), test=test)), (z.data.shape[0], 512, 6, 6))
-        h = F.relu(self.bn1(self.dc1(h), test=test))
-        h = F.relu(self.bn2(self.dc2(h), test=test))
-        h = F.relu(self.bn3(self.dc3(h), test=test))
-        x = (self.dc4(h))
-        return x
+    def __call__(self, x, test=False):
+        h = elu(self.c0(x))     # no bn because images from generator will katayotteru?
+        h = elu(self.bn1(self.c1(h), test=test))
+        h = elu(self.bn2(self.c2(h), test=test))
+
+        h = F.relu(self.bn1(self.dc2(h), test=test))
+        h = F.relu(self.bn0(self.dc1(h), test=test))
+        y = (self.dc0(h))
+        return x+1e-2*y
+
+
+
 
 
 
@@ -181,23 +185,20 @@ class Discriminator(chainer.Chain):
 class Discriminator2(chainer.Chain):
     def __init__(self):
         super(Discriminator2, self).__init__(
-            # c0 = L.Convolution2D(3, 32, 4, stride=2, pad=0, wscale=0.02*math.sqrt(4*4*32)),
-            # c1 = L.Convolution2D(32, 64, 5, stride=1, pad=0, wscale=0.02*math.sqrt(4*4*64)),
-            # c2 = L.Convolution2D(64, 64, 5, stride=1, pad=0, wscale=0.02*math.sqrt(4*4*128)),
-            # c3 = L.Convolution2D(64, 64, 5, stride=1, pad=0, wscale=0.02*math.sqrt(4*4*256)),
-            # l4l = L.Linear(35*35*64, 2, wscale=0.02*math.sqrt(35*35*64)),
-            bn0 = L.BatchNormalization(32),
-            bn1 = L.BatchNormalization(64),
-            bn2 = L.BatchNormalization(64),
-            bn3 = L.BatchNormalization(64),
+            c0 = L.Convolution2D(3, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*3)),
+            c1 = L.Convolution2D(64, 128, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
+            c2 = L.Convolution2D(128, 256, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
+            l4l = L.Linear(256, 2, wscale=0.02*math.sqrt(6*6*512)),
+            bn0 = L.BatchNormalization(64),
+            bn1 = L.BatchNormalization(128),
+            bn2 = L.BatchNormalization(256),
         )
         
     def __call__(self, x, test=False):
         h = elu(self.c0(x))     # no bn because images from generator will katayotteru?
         h = elu(self.bn1(self.c1(h), test=test))
         h = elu(self.bn2(self.c2(h), test=test))
-        h = elu(self.bn3(self.c3(h), test=test))
-        l = self.l4l(h)
+        l = self.l4l(F.sum(h,(2,3)))
         return l
 
 
@@ -208,14 +209,17 @@ def clip_img(x):
 	return np.float32(-1 if x<-1 else (1 if x>1 else x))
 
 
-def train_dcgan_labeled(gen, dis, dis2, epoch0=0):
+def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
     o_gen = optimizers.Adam(alpha=0.0002, beta1=0.5)
+    o_retou = optimizers.Adam(alpha=0.0002, beta1=0.5)
     o_dis = optimizers.Adam(alpha=0.0002, beta1=0.5)
     o_dis2 = optimizers.Adam(alpha=0.0002, beta1=0.5)
     o_gen.setup(gen)
+    o_retou.setup(retou)
     o_dis.setup(dis)
     o_dis2.setup(dis2)
     o_gen.add_hook(chainer.optimizer.WeightDecay(0.00001))
+    o_retou.add_hook(chainer.optimizer.WeightDecay(0.00001))
     o_dis.add_hook(chainer.optimizer.WeightDecay(0.00001))
     o_dis2.add_hook(chainer.optimizer.WeightDecay(0.00001))
 
@@ -285,6 +289,8 @@ def train_dcgan_labeled(gen, dis, dis2, epoch0=0):
             
             #print "backward done"
             
+            #2nd round battle
+            x2.unchain_backward()
             yl2nd = dis2(x2)
             
 
@@ -311,9 +317,13 @@ def train_dcgan_labeled(gen, dis, dis2, epoch0=0):
 
                 subprocess.call("cp %s ~/public_html/dcgan-%d.png"%(imgfn,args.gpu),shell=True)
         serializers.save_hdf5("%s/dcgan_model_dis_%d.h5"%(out_model_dir, epoch),dis)
+        serializers.save_hdf5("%s/dcgan_model_dis2_%d.h5"%(out_model_dir, epoch),dis2)
         serializers.save_hdf5("%s/dcgan_model_gen_%d.h5"%(out_model_dir, epoch),gen)
+        serializers.save_hdf5("%s/dcgan_model_retou_%d.h5"%(out_model_dir, epoch),retou)
         serializers.save_hdf5("%s/dcgan_state_dis_%d.h5"%(out_model_dir, epoch),o_dis)
+        serializers.save_hdf5("%s/dcgan_state_dis2_%d.h5"%(out_model_dir, epoch),o_dis2)
         serializers.save_hdf5("%s/dcgan_state_gen_%d.h5"%(out_model_dir, epoch),o_gen)
+        serializers.save_hdf5("%s/dcgan_state_retou_%d.h5"%(out_model_dir, epoch),o_retou)
         print 'epoch end', epoch, sum_l_gen/n_train, sum_l_dis/n_train
 
 
@@ -322,9 +332,11 @@ xp = cuda.cupy
 cuda.get_device(int(args.gpu)).use()
 
 gen = Generator()
+retou = Retoucher()
 dis = Discriminator()
 dis2 = Discriminator2()
 gen.to_gpu()
+retou.to_gpu()
 dis.to_gpu()
 dis2.to_gpu()
 
@@ -335,4 +347,4 @@ try:
 except:
     pass
 
-train_dcgan_labeled(gen, dis, dis2)
+train_dcgan_labeled(gen, retou, dis, dis2)
