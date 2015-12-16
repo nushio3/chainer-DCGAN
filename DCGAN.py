@@ -37,7 +37,7 @@ out_model_dir = './out_models_%s'%(args.gpu)
 
 
 nz = 100          # # of dim for Z
-batchsize=100
+batchsize=25
 n_epoch=10000
 n_train=200000
 image_save_interval = 50000
@@ -290,12 +290,31 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             #print "backward done"
             
             #2nd round battle
+            x.unchain_backward()
             x2.unchain_backward()
-            yl2nd = dis2(x2)
+
+            x3=retou(x)       # let the retoucher make the generated image better
+            yl2nd = dis2(x3)  # and try deceive the discriminator
             
+            L_retou = F.softmax_cross_entropy(yl2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
+            L_dis2 = F.softmax_cross_entropy(yl2nd, Variable(xp.ones(batchsize, dtype=np.int32)))
+            
+            # train discriminator2 with the teacher images.
+                    
+            yl2 = dis2(x2)
+            L_dis2 += F.softmax_cross_entropy(yl2, Variable(xp.zeros(batchsize, dtype=np.int32)))
+
+            o_retou.zero_grads()
+            L_retou.backward()
+            o_retou.update()
+            
+            o_dis2.zero_grads()
+            L_dis2.backward()
+            o_dis2.update()
+
 
             if i%image_save_interval==0:
-                plt.rcParams['figure.figsize'] = (16.0,16.0)
+                plt.rcParams['figure.figsize'] = (16.0,32.0)
                 plt.close('all')
                 
                 vissize = 100
@@ -303,13 +322,20 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 z[50:,:] = (xp.random.uniform(-1, 1, (50, nz), dtype=np.float32))
                 z = Variable(z)
                 x = gen(z, test=True)
+                x3 = retou(x, test=True)
                 x = x.data.get()
+                x3 = x3.data.get()
                 imgfn = '%s/vis_%d_%d.png'%(out_image_dir, epoch,i)
 
                 print imgfn
                 for i_ in range(100):
                     tmp = ((np.vectorize(clip_img)(x[i_,:,:,:])+1)/2).transpose(1,2,0)
-                    plt.subplot(10,10,i_+1)
+                    plt.subplot(10,20,i_+1)
+                    plt.imshow(tmp)
+                    plt.axis('off')
+                for i_ in range(100):
+                    tmp = ((np.vectorize(clip_img)(x3[i_,:,:,:])+1)/2).transpose(1,2,0)
+                    plt.subplot(10,20,i_+101)
                     plt.imshow(tmp)
                     plt.axis('off')
                 plt.suptitle(imgfn)
