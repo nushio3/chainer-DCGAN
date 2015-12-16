@@ -1,10 +1,12 @@
 import pickle
 import numpy as np
 from PIL import Image
-import os
-from StringIO import StringIO
+import os,io
 import math
-import pylab
+import matplotlib as pylab
+
+pylab.use('Agg')
+
 
 
 import chainer
@@ -37,14 +39,14 @@ image_save_interval = 50000
 # read all images
 
 fs = os.listdir(image_dir)
-print len(fs)
+print(len(fs))
 dataset = []
 for fn in fs:
     f = open('%s/%s'%(image_dir,fn), 'rb')
     img_bin = f.read()
     dataset.append(img_bin)
     f.close()
-print len(dataset)
+print(len(dataset))
 
 class ELU(function.Function):
 
@@ -162,6 +164,7 @@ def train_dcgan_labeled(gen, dis, epoch0=0):
     zvis = (xp.random.uniform(-1, 1, (100, nz), dtype=np.float32))
     
     for epoch in xrange(epoch0,n_epoch):
+        print(epoch)
         perm = np.random.permutation(n_train)
         sum_l_dis = np.float32(0)
         sum_l_gen = np.float32(0)
@@ -178,13 +181,13 @@ def train_dcgan_labeled(gen, dis, epoch0=0):
                     rnd = np.random.randint(len(dataset))
                     rnd2 = np.random.randint(2)
 
-                    img = np.asarray(Image.open(StringIO(dataset[rnd])).convert('RGB')).astype(np.float32).transpose(2, 0, 1)
+                    img = np.asarray(Image.open(io.StringIO(dataset[rnd])).convert('RGB')).astype(np.float32).transpose(2, 0, 1)
                     if rnd2==0:
                         x2[j,:,:,:] = (img[:,:,::-1]-128.0)/128.0
                     else:
                         x2[j,:,:,:] = (img[:,:,:]-128.0)/128.0
                 except:
-                    print 'read image error occured', fs[rnd]
+                    print('read image error occured', fs[rnd])
             #print "load image done"
             
             # train generator
@@ -235,7 +238,7 @@ def train_dcgan_labeled(gen, dis, epoch0=0):
         serializers.save_hdf5("%s/dcgan_model_gen_%d.h5"%(out_model_dir, epoch),gen)
         serializers.save_hdf5("%s/dcgan_state_dis_%d.h5"%(out_model_dir, epoch),o_dis)
         serializers.save_hdf5("%s/dcgan_state_gen_%d.h5"%(out_model_dir, epoch),o_gen)
-        print 'epoch end', epoch, sum_l_gen/n_train, sum_l_dis/n_train
+        print('epoch end', epoch, sum_l_gen/n_train, sum_l_dis/n_train)
 
 
 
