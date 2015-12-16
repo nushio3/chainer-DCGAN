@@ -294,9 +294,11 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             x2.unchain_backward()
 
             x3=retou(x)       # let the retoucher make the generated image better
-            yl2nd = dis2(x3)  # and try deceive the discriminator
+            yl1st = dis(x3)   # and try deceive the discriminator
+            yl2nd = dis2(x3)  # and try deceive the discriminator2
             
-            L_retou = F.softmax_cross_entropy(yl2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
+            L_retou = F.softmax_cross_entropy(yl1st, Variable(xp.zeros(batchsize, dtype=np.int32)))
+            L_retou += F.softmax_cross_entropy(yl2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
             L_dis2 = F.softmax_cross_entropy(yl2nd, Variable(xp.ones(batchsize, dtype=np.int32)))
             
             # train discriminator2 with the teacher images.
