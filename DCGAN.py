@@ -1,7 +1,6 @@
-import pickle
+import pickle,argparse,os,subprocess
 import numpy as np
 from PIL import Image
-import os,subprocess
 from StringIO import StringIO
 import math
 import matplotlib
@@ -26,6 +25,11 @@ import chainer.links as L
 
 import numpy
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--gpu', '-g', default=-1, type=int,
+                    help='GPU ID - {}(smaller value indicates CPU)'.format(GPU_STRIDE))
+args = parser.parse_args()
+
 
 image_dir = './images'
 out_image_dir = './out_images'
@@ -33,7 +37,7 @@ out_model_dir = './out_models'
 
 
 nz = 100          # # of dim for Z
-batchsize=10 # 100
+batchsize=100
 n_epoch=10000
 n_train=200000
 image_save_interval = 50000
@@ -115,19 +119,13 @@ class Generator(chainer.Chain):
             bn2 = L.BatchNormalization(128),
             bn3 = L.BatchNormalization(64),
         )
-
+        
     def __call__(self, z, test=False):
-        print "trace size gen:", z.data.shape # (10,100)
         h = F.reshape(F.relu(self.bn0l(self.l0z(z), test=test)), (z.data.shape[0], 512, 6, 6))
-        print h.data.shape # (batch, 512, 6, 6)
         h = F.relu(self.bn1(self.dc1(h), test=test))
-        print h.data.shape # (batch, 256, 12, 12)
         h = F.relu(self.bn2(self.dc2(h), test=test))
-        print h.data.shape # (batch, 128, 24, 24)
         h = F.relu(self.bn3(self.dc3(h), test=test))
-        print h.data.shape # (batch, 64,  48, 48)
         x = (self.dc4(h))
-        print x.data.shape # (batch,  3,  96, 96)
         return x
 
 
@@ -135,7 +133,7 @@ class Generator(chainer.Chain):
 class Discriminator(chainer.Chain):
     def __init__(self):
         super(Discriminator, self).__init__(
-            c0 = L.Convolution2D(3, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*3),use_cudnn=False),
+            c0 = L.Convolution2D(3, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*3)),
             c1 = L.Convolution2D(64, 128, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
             c2 = L.Convolution2D(128, 256, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
             c3 = L.Convolution2D(256, 512, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*256)),
@@ -145,18 +143,12 @@ class Discriminator(chainer.Chain):
             bn2 = L.BatchNormalization(256),
             bn3 = L.BatchNormalization(512),
         )
-
+        
     def __call__(self, x, test=False):
-        # (batch, 3, 96, 96)
-        print type(x)
         h = elu(self.c0(x))     # no bn because images from generator will katayotteru?
-        # (batch, 64, 48, 48)
         h = elu(self.bn1(self.c1(h), test=test))
-        # (batch, 128, 24, 24)
         h = elu(self.bn2(self.c2(h), test=test))
-        # (batch, 256, 12, 12)
         h = elu(self.bn3(self.c3(h), test=test))
-        # (batch, 512, 6, 6)
         l = self.l4l(h)
         return l
 
@@ -175,15 +167,14 @@ def train_dcgan_labeled(gen, dis, epoch0=0):
     o_gen.add_hook(chainer.optimizer.WeightDecay(0.00001))
     o_dis.add_hook(chainer.optimizer.WeightDecay(0.00001))
 
-    #GPU# zvis = (xp.random.uniform(-1, 1, (100, nz), dtype=np.float32))
-    zvis = xp.random.uniform(-1, 1, (100, nz)).astype(np.float32)
-
+    zvis = (xp.random.uniform(-1, 1, (100, nz), dtype=np.float32))
+    
     for epoch in xrange(epoch0,n_epoch):
         print "epoch:", epoch
         perm = np.random.permutation(n_train)
         sum_l_dis = np.float32(0)
         sum_l_gen = np.float32(0)
-
+        
         for i in xrange(0, n_train, batchsize):
             print i,
             # discriminator
@@ -212,40 +203,39 @@ def train_dcgan_labeled(gen, dis, epoch0=0):
                 except:
                     print 'read image error occured', fs[rnd]
             #print "load image done"
-
+            
             # train generator
-            #GPU# z = Variable(xp.random.uniform(-1, 1, (batchsize, nz), dtype=np.float32))
-            z = Variable(xp.random.uniform(-1, 1, (batchsize, nz)).astype(np.float32))
+            z = Variable(xp.random.uniform(-1, 1, (batchsize, nz), dtype=np.float32))
             x = gen(z)
             yl = dis(x)
             L_gen = F.softmax_cross_entropy(yl, Variable(xp.zeros(batchsize, dtype=np.int32)))
             L_dis = F.softmax_cross_entropy(yl, Variable(xp.ones(batchsize, dtype=np.int32)))
-
+            
             # train discriminator
-
-            #GPU# x2 = Variable(cuda.to_gpu(x2))
+                    
+            x2 = Variable(cuda.to_gpu(x2))
             yl2 = dis(x2)
             L_dis += F.softmax_cross_entropy(yl2, Variable(xp.zeros(batchsize, dtype=np.int32)))
-
+            
             #print "forward done"
 
             o_gen.zero_grads()
             L_gen.backward()
             o_gen.update()
-
+            
             o_dis.zero_grads()
             L_dis.backward()
             o_dis.update()
-
+            
             sum_l_gen += L_gen.data.get()
             sum_l_dis += L_dis.data.get()
-
+            
             #print "backward done"
 
             if i%image_save_interval==0:
                 plt.rcParams['figure.figsize'] = (16.0,16.0)
                 plt.close('all')
-
+                
                 vissize = 100
                 z = zvis
                 z[50:,:] = (xp.random.uniform(-1, 1, (50, nz), dtype=np.float32))
@@ -264,7 +254,6 @@ def train_dcgan_labeled(gen, dis, epoch0=0):
                 plt.savefig(imgfn)
 
                 subprocess.call("cp %s ~/public_html/dcgan.png"%(imgfn),shell=True)
-
         serializers.save_hdf5("%s/dcgan_model_dis_%d.h5"%(out_model_dir, epoch),dis)
         serializers.save_hdf5("%s/dcgan_model_gen_%d.h5"%(out_model_dir, epoch),gen)
         serializers.save_hdf5("%s/dcgan_state_dis_%d.h5"%(out_model_dir, epoch),o_dis)
@@ -273,16 +262,13 @@ def train_dcgan_labeled(gen, dis, epoch0=0):
 
 
 
-# xp = cuda.cupy
-
-xp = np
-
-# cuda.get_device(0).use()
+xp = cuda.cupy
+cuda.get_device(0).use()
 
 gen = Generator()
 dis = Discriminator()
-#GPU# gen.to_gpu()
-#GPU# dis.to_gpu()
+gen.to_gpu()
+dis.to_gpu()
 
 
 try:
