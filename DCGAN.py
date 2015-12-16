@@ -36,7 +36,7 @@ nz = 100          # # of dim for Z
 batchsize=100
 n_epoch=10000
 n_train=200000
-image_save_interval = 5000
+image_save_interval = 50000
 
 # read all images
 
@@ -185,8 +185,13 @@ def train_dcgan_labeled(gen, dis, epoch0=0):
                     rnd2 = np.random.randint(2)
 
                     img = np.asarray(Image.open(StringIO(dataset[rnd])).convert('RGB')).astype(np.float32).transpose(2, 0, 1)
-                    oy = int((img.shape[1]-96)/2)
-                    ox = int((img.shape[2]-96)/2)
+                    # offset the image about the center of the image.
+                    oy = (img.shape[1]-96)/2
+                    ox = (img.shape[2]-96)/2
+                    oy=oy/2+np.random.randint(oy)
+                    ox=ox/2+np.random.randint(ox)
+
+                    # optionally, mirror the image.
                     if rnd2==0:
                         img[:,:,:] = img[:,:,::-1]
 
