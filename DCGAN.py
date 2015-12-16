@@ -328,16 +328,22 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 imgfn = '%s/vis_%d_%d.png'%(out_image_dir, epoch,i)
 
                 print imgfn
+
+                def totitle(x):
+                    return str(x)[0:6]
+
                 for i_ in range(100):
                     tmp = ((np.vectorize(clip_img)(x[i_,:,:,:])+1)/2).transpose(1,2,0)
-                    plt.subplot(10,20,i_+1)
+                    plt.subplot(20,10,i_+1)
                     plt.imshow(tmp)
                     plt.axis('off')
+                    plt.title(totitle(z.data[i_,0]))
                 for i_ in range(100):
                     tmp = ((np.vectorize(clip_img)(x3[i_,:,:,:])+1)/2).transpose(1,2,0)
-                    plt.subplot(10,20,i_+101)
+                    plt.subplot(20,10,i_+101)
                     plt.imshow(tmp)
                     plt.axis('off')
+                    plt.title(totitle(z.data[i_,0])+'kai')
                 plt.suptitle(imgfn)
                 plt.savefig(imgfn)
 
