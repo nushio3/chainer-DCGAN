@@ -335,7 +335,10 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 last_total_loss = total_loss
                 print "retouch:",epoch,i,retouch_magic_touch_go, total_loss
                 x3.unchain_backward()
-
+            L_gen.unchain_backward()
+            L_dis.unchain_backward()
+            L_dis2.unchain_backward()
+            L_retou.unchain_backward()
 
             if i%image_save_interval==0:
                 plt.rcParams['figure.figsize'] = (16.0,64.0)
