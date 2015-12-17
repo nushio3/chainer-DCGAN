@@ -371,10 +371,10 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
 
 
                 def mktitle(x1):
-                    d1 =  F.softmax_cross_entropy(dis(x1,test=True), Variable(xp.zeros(1, dtype=np.int32)))
-                    d2 =  F.softmax_cross_entropy(dis2(x1,test=True), Variable(xp.zeros(1, dtype=np.int32)))
+                    d1 = -F.log( F.softmax(dis(x1,test=True), Variable(xp.zeros(1, dtype=np.int32))))
+                    d2 = -F.log( F.softmax(dis2(x1,test=True), Variable(xp.zeros(1, dtype=np.int32))))
                     def ppr(f):
-                        return int(1e3*min(1,max(0,float(str(f)))))
+                        return '{:0.3}'.format(float(str(f)))
                     ret = '{},{}'.format(ppr(d1.data),ppr(d2.data))
                     return ret
 
