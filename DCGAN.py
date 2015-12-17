@@ -38,6 +38,10 @@ out_image_dir = './out_images_%s'%(args.gpu)
 out_model_dir = './out_models_%s'%(args.gpu)
 
 
+subprocess.call("mkdir -p %s "%(out_image_dir),shell=True)
+subprocess.call("mkdir -p %s "%(out_model_dir),shell=True)
+
+
 nz = 100          # # of dim for Z
 batchsize=25
 n_epoch=10000
@@ -312,7 +316,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             #train retoucher
             if type(x_retouch_motif)==type(None) or retouch_fail_count >= (1 if epoch==0 else 10):
                 print "Supply new motifs to retoucher."
-                x_retouch_motif = x
+                x_retouch_motif = Variable(x.data)
                 retouch_fail_count = 0
                 last_retouch_loss = 99e99
 
@@ -392,11 +396,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                     d2 =  F.softmax(dis2(x1,test=True))
                     def ppr(d):
                         f = float(str(d.data[0,0]))
-                        if f > 0:
-                            f = -math.log(f)
-                            return '{:0.3}'.format(f)
-                        else:
-                            return '-'
+                        return '{:0.3}'.format(f)
                     ret = '{},{}'.format(ppr(d1),ppr(d2))
                     return ret
 
@@ -405,7 +405,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                     plt.subplot(43,10,i_+1)
                     plt.imshow(tmp)
                     plt.axis('off')
-                    plt.title(mktitle(x_split[i_]))
+                    plt.title(mktitle(x_split[i_]),fontsize=6)
 
                 r_p_cnt = 0
                 print "vis-retouch:",
@@ -424,7 +424,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                         plt.subplot(43,10,i_+1+110*r_p_cnt)
                         plt.imshow(tmp)
                         plt.axis('off')
-                        plt.title(mktitle(x3_split[i_]))
+                        plt.title(mktitle(x3_split[i_]),fontsize=6)
                 plt.suptitle(imgfn)
                 plt.savefig(imgfn)
                 print imgfn
@@ -440,9 +440,10 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 serializers.save_hdf5("%s/dcgan_state_gen.h5"%(out_model_dir),o_gen)
                 serializers.save_hdf5("%s/dcgan_state_retou.h5"%(out_model_dir),o_retou)
                 
-                history_dir = 'history/%d-%d'%(epoch,  i)
-                subprocess.call("mkdir -p %s "%(history_dir),shell=True)
-                subprocess.call("cp %s/*.h5 %s "%(out_model_dir,history_dir),shell=True)
+                # we don't have enough disk for history
+                #history_dir = 'history/%d-%d'%(epoch,  i)
+                #subprocess.call("mkdir -p %s "%(history_dir),shell=True)
+                #subprocess.call("cp %s/*.h5 %s "%(out_model_dir,history_dir),shell=True)
 
 
         print 'epoch end', epoch, sum_l_gen/n_train, sum_l_dis/n_train
