@@ -320,17 +320,24 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 
                 L_retou = F.softmax_cross_entropy(yl1st, Variable(xp.zeros(batchsize, dtype=np.int32)))
                 L_retou += F.softmax_cross_entropy(yl2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
+                L_dis  = F.softmax_cross_entropy(yl1st, Variable(xp.ones(batchsize, dtype=np.int32)))
                 L_dis2 = F.softmax_cross_entropy(yl2nd, Variable(xp.ones(batchsize, dtype=np.int32)))
                 
-                # train discriminator2 with the teacher images.
+                # train discriminator1,2 with the teacher images.
                 x2 =  Variable(cuda.to_gpu(load_dataset()))
+                yl  = dis(x2)
                 yl2 = dis2(x2)
+                L_dis  += F.softmax_cross_entropy(yl, Variable(xp.zeros(batchsize, dtype=np.int32)))
                 L_dis2 += F.softmax_cross_entropy(yl2, Variable(xp.zeros(batchsize, dtype=np.int32)))
     
                 o_retou.zero_grads()
                 L_retou.backward()
                 o_retou.update()
                 
+                o_dis.zero_grads()
+                L_dis.backward()
+                o_dis.update()
+
                 o_dis2.zero_grads()
                 L_dis2.backward()
                 o_dis2.update()
