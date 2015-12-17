@@ -40,7 +40,7 @@ nz = 100          # # of dim for Z
 batchsize=25
 n_epoch=10000
 n_train=200000
-image_save_interval = 500
+image_save_interval =20000
 
 # read all images
 
