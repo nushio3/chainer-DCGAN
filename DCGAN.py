@@ -285,12 +285,25 @@ def train_dcgan_labeled(gen, retou, dis, epoch0=0):
             # train discriminator
             x_train = Variable(cuda.to_gpu(x_train))
             yl_train = dis(x_train)
-            L_dis += F.softmax_cross_entropy(yl_train, Variable(xp.zeros(batchsize, dtype=np.int32)))
+
+            softmax_gen = F.softmax(yl).data[:,0]
+            average_softmax=np.average(cuda.to_cpu(softmax_gen))
+            if average_softmax < 1e-3:
+                train_sample_factor = 10.0
+            elif average_softmax < 1e-2:
+                train_sample_factor = 4.0
+            elif average_softmax > 0.4:
+                train_sample_factor = 1.0
+            else:
+                train_sample_factor = 2.0
+
+            L_dis += train_sample_factor * F.softmax_cross_entropy(yl_train, Variable(xp.zeros(batchsize, dtype=np.int32)))
             
+                
             
 
             #train retoucher
-            if type(x_retouch_motif)==type(None) or retouch_fail_count >= (1 if epoch==0 else 10):
+            if type(x_retouch_motif)==type(None) or retouch_fail_count >= min(1+ epoch, 10):
                 print "Supply new motifs to retoucher."
                 x_retouch_motif = Variable(x.data)
                 retouch_fail_count = 0
