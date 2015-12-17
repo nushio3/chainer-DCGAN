@@ -303,7 +303,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 retouch_fail_count = 0
                 last_retouch_loss = 99e99
 
-            x3=retou(x3)       # let the retoucher make the generated image better
+            x3=retou(x_retouch_motif)  # let the retoucher make the generated image better
             yl1st = dis(x3)   # and try deceive the discriminator
             yl2nd = dis2(x3)  # and try deceive the discriminator2
             
