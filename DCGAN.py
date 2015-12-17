@@ -260,6 +260,11 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
     o_dis2.add_hook(chainer.optimizer.WeightDecay(0.00001))
 
     zvis = (xp.random.uniform(-1, 1, (100, nz), dtype=np.float32))
+
+    x_retouched = None
+    retouch_fail_count = 0
+    last_retouch_loss = 1.2e99
+
     
     for epoch in xrange(epoch0,n_epoch):
         print "epoch:", epoch
@@ -274,7 +279,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             # 1: from noise
 
             #print "load image start ", i
-            x2 = load_dataset()
+            x_train = load_dataset()
             #print "load image done"
             
             # train generator
@@ -286,73 +291,70 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             L_dis = F.softmax_cross_entropy(yl, Variable(xp.ones(batchsize, dtype=np.int32)))
             
             # train discriminator
-                    
-            x2 = Variable(cuda.to_gpu(x2))
-            yl2 = dis(x2)
+            x_train = Variable(cuda.to_gpu(x_train))
+            yl2 = dis(x_train)
             L_dis += F.softmax_cross_entropy(yl2, Variable(xp.zeros(batchsize, dtype=np.int32)))
             
-            #print "forward done"
+            
 
+            #train retoucher
+            if (not x_retouched) or retouch_fail_count > 10:
+                print "Supply new motifs to retoucher."
+                x_retouched = x
+                retouch_fail_count = 0
+                last_retouch_loss = 99e99
+
+            x_retouched=retou(x_retouched)       # let the retoucher make the generated image better
+            yl1st = dis(x_retouched)   # and try deceive the discriminator
+            yl2nd = dis2(x_retouched)  # and try deceive the discriminator2
+            
+            # retoucher want their image to look like those from dataset(zeros), 
+            # while discriminators want to classify them as from noise(ones)
+            L_retou = F.softmax_cross_entropy(yl1st, Variable(xp.zeros(batchsize, dtype=np.int32)))
+            L_retou += F.softmax_cross_entropy(yl2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
+            L_dis  += F.softmax_cross_entropy(yl1st, Variable(xp.ones(batchsize, dtype=np.int32)))
+            L_dis2 += F.softmax_cross_entropy(yl2nd, Variable(xp.ones(batchsize, dtype=np.int32)))
+            
+            # train discriminator2 with the true images.
+            yl2_2nd = dis2(x_train)
+            L_dis2 += F.softmax_cross_entropy(yl2_2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
+    
             o_gen.zero_grads()
             L_gen.backward()
             o_gen.update()
             
+            o_retou.zero_grads()
+            L_retou.backward()
+            o_retou.update()
+            
             o_dis.zero_grads()
             L_dis.backward()
             o_dis.update()
+
+            o_dis2.zero_grads()
+            L_dis2.backward()
+            o_dis2.update()
+
+
+            retouch_loss = float(str((L_retou).data))
+            if retouch_loss >= last_retouch_loss:
+                retouch_fail_count += 1
+            last_retouch_loss = min(retouch_loss,last_retouch_loss)
             
+            #print "backward done"
+
             sum_l_gen += L_gen.data.get()
             sum_l_dis += L_dis.data.get()
             
-            #print "backward done"
-            
-            #2nd round battle
             x.unchain_backward()
-            x2.unchain_backward()
-
-            x3 = x
-            retouch_magic_touch_go = 10
-            last_total_loss = 1.2e99
-            while retouch_magic_touch_go>0:
-                x3=retou(x3)       # let the retoucher make the generated image better
-                yl1st = dis(x3)   # and try deceive the discriminator
-                yl2nd = dis2(x3)  # and try deceive the discriminator2
-                
-                L_retou = F.softmax_cross_entropy(yl1st, Variable(xp.zeros(batchsize, dtype=np.int32)))
-                L_retou += F.softmax_cross_entropy(yl2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
-                L_dis  = F.softmax_cross_entropy(yl1st, Variable(xp.ones(batchsize, dtype=np.int32)))
-                L_dis2 = F.softmax_cross_entropy(yl2nd, Variable(xp.ones(batchsize, dtype=np.int32)))
-                
-                # train discriminator1,2 with the teacher images.
-                x2 =  Variable(cuda.to_gpu(load_dataset()))
-                yl  = dis(x2)
-                yl2 = dis2(x2)
-                L_dis  += F.softmax_cross_entropy(yl, Variable(xp.zeros(batchsize, dtype=np.int32)))
-                L_dis2 += F.softmax_cross_entropy(yl2, Variable(xp.zeros(batchsize, dtype=np.int32)))
-    
-                o_retou.zero_grads()
-                L_retou.backward()
-                o_retou.update()
-                
-                o_dis.zero_grads()
-                L_dis.backward()
-                o_dis.update()
-
-                o_dis2.zero_grads()
-                L_dis2.backward()
-                o_dis2.update()
-
-
-                total_loss = float(str((L_retou).data))
-                if total_loss >= last_total_loss:
-                    retouch_magic_touch_go -= 1
-                last_total_loss = min(total_loss,last_total_loss)
-                print "retouch:",epoch,i,retouch_magic_touch_go, total_loss
-                x3.unchain_backward()
+            x_train.unchain_backward()
+            x_retouched.unchain_backward()
             L_gen.unchain_backward()
+            L_retou.unchain_backward()
             L_dis.unchain_backward()
             L_dis2.unchain_backward()
-            L_retou.unchain_backward()
+
+            print "epoch:",epoch,"iter:",i,"retouch:",retouch_fail_count, retouch_loss
 
             if i%image_save_interval==0:
                 plt.rcParams['figure.figsize'] = (16.0,64.0)
