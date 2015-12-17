@@ -218,6 +218,30 @@ class Discriminator2(chainer.Chain):
 def clip_img(x):
 	return np.float32(-1 if x<-1 else (1 if x>1 else x))
 
+def load_dataset():
+    x2 = np.zeros((batchsize, 3, 96, 96), dtype=np.float32)
+
+    for j in range(batchsize):
+        try:
+            rnd = np.random.randint(len(dataset))
+            rnd2 = np.random.randint(2)
+            
+            img = np.asarray(Image.open(StringIO(dataset[rnd])).convert('RGB')).astype(np.float32).transpose(2, 0, 1)
+            # offset the image about the center of the image.
+            oy = (img.shape[1]-96)/2
+            ox = (img.shape[2]-96)/2
+            oy=oy/2+np.random.randint(oy)
+            ox=ox/2+np.random.randint(ox)
+
+            # optionally, mirror the image.
+            if rnd2==0:
+                img[:,:,:] = img[:,:,::-1]
+
+            x2[j,:,:,:] = (img[:,oy:oy+96,ox:ox+96]-128.0)/128.0
+        except:
+            print 'read image error occured', fs[rnd]
+    return x2
+
 
 def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
     o_gen = optimizers.Adam(alpha=0.0002, beta1=0.5)
@@ -248,26 +272,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             # 1: from noise
 
             #print "load image start ", i
-            x2 = np.zeros((batchsize, 3, 96, 96), dtype=np.float32)
-            for j in range(batchsize):
-                try:
-                    rnd = np.random.randint(len(dataset))
-                    rnd2 = np.random.randint(2)
-
-                    img = np.asarray(Image.open(StringIO(dataset[rnd])).convert('RGB')).astype(np.float32).transpose(2, 0, 1)
-                    # offset the image about the center of the image.
-                    oy = (img.shape[1]-96)/2
-                    ox = (img.shape[2]-96)/2
-                    oy=oy/2+np.random.randint(oy)
-                    ox=ox/2+np.random.randint(ox)
-
-                    # optionally, mirror the image.
-                    if rnd2==0:
-                        img[:,:,:] = img[:,:,::-1]
-
-                    x2[j,:,:,:] = (img[:,oy:oy+96,ox:ox+96]-128.0)/128.0
-                except:
-                    print 'read image error occured', fs[rnd]
+            x2 = load_dataset()
             #print "load image done"
             
             # train generator
@@ -329,10 +334,10 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 o_dis2.update()
 
 
-                total_loss = float(str((L_retou + L_dis2).data))
+                total_loss = float(str((L_retou).data))
                 if total_loss >= last_total_loss:
                     retouch_magic_touch_go -= 1
-                last_total_loss = total_loss
+                last_total_loss = min(total_loss,last_total_loss)
                 print "retouch:",epoch,i,retouch_magic_touch_go, total_loss
                 x3.unchain_backward()
             L_gen.unchain_backward()
