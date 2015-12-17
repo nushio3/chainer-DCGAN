@@ -1,4 +1,4 @@
-import pickle,argparse,os,subprocess
+import pickle,argparse,os,subprocess,sys
 import numpy as np
 from PIL import Image
 from StringIO import StringIO
@@ -374,6 +374,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                     r_p_cnt+=1
                     for r_cnt in range(cnt):
                         print r_cnt,
+                        sys.stdout.flush()
                         x.unchain_backward()
                         x = retou(x, test=True)
                     x3_data = x.data.get()
