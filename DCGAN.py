@@ -167,7 +167,7 @@ class Retoucher(chainer.Chain):
         h = h24 + 1e-1*F.relu(self.bn1(self.dc2(h), test=test))
         h = h48 + 1e-1*F.relu(self.bn0(self.dc1(h), test=test))
         y = (self.dc0(h))
-        return x+1e-2*y
+        return 0.9*x+1e-2*y
 
 
 
@@ -361,9 +361,12 @@ def train_dcgan_labeled(gen, retou, dis, epoch0=0):
             print "epoch:",epoch,"iter:",i,"softmax:",average_softmax, "retouch:",retouch_fail_count, retouch_loss
 
             if i%image_save_interval==0:
-                plt.rcParams['figure.figsize'] = (16.0,64.0)
+                n_retou=6
+
+                plt.rcParams['figure.figsize'] = (16.0,16.0*n_retou)
                 plt.close('all')
                 
+
                 vissize = 100
                 z = zvis
                 z[50:,:] = (xp.random.uniform(-1, 1, (50, nz), dtype=np.float32))
@@ -385,14 +388,14 @@ def train_dcgan_labeled(gen, retou, dis, epoch0=0):
 
                 for i_ in range(100):
                     tmp = ((np.vectorize(clip_img)(x_data[i_,:,:,:])+1)/2).transpose(1,2,0)
-                    plt.subplot(43,10,i_+1)
+                    plt.subplot(n_retou*10+9,10,1+i_%10+(i_/10)*10*(n_retou+1))
                     plt.imshow(tmp)
                     plt.axis('off')
                     plt.title(mktitle(x_split[i_]),fontsize=6)
 
                 r_p_cnt = 0
                 print "vis-retouch:",
-                for cnt in [1,1,1]:
+                for cnt in [1,1,1,1,1]:
                     r_p_cnt+=1
                     for r_cnt in range(cnt):
                         print r_cnt,
@@ -404,7 +407,8 @@ def train_dcgan_labeled(gen, retou, dis, epoch0=0):
                     
                     for i_ in range(100):
                         tmp = ((np.vectorize(clip_img)(x3_data[i_,:,:,:])+1)/2).transpose(1,2,0)
-                        plt.subplot(43,10,i_+1+110*r_p_cnt)
+
+                        plt.subplot(n_retou*10+9,10,1+i_%10+(i_/10)*10*(n_retou+1)+10*r_p_cnt)
                         plt.imshow(tmp)
                         plt.axis('off')
                         plt.title(mktitle(x3_split[i_]),fontsize=6)
