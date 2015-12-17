@@ -313,7 +313,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             L_retou = F.softmax_cross_entropy(yl1st, Variable(xp.zeros(batchsize, dtype=np.int32)))
             L_retou += F.softmax_cross_entropy(yl2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
             L_dis  += F.softmax_cross_entropy(yl1st, Variable(xp.ones(batchsize, dtype=np.int32)))
-            L_dis2 += F.softmax_cross_entropy(yl2nd, Variable(xp.ones(batchsize, dtype=np.int32)))
+            L_dis2  = F.softmax_cross_entropy(yl2nd, Variable(xp.ones(batchsize, dtype=np.int32)))
             
             # train discriminator2 with the true images.
             yl2_2nd = dis2(x_train)
@@ -366,7 +366,6 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 z = Variable(z)
                 x = gen(z, test=True)
                 x_data = x.data.get()
-                x3_data = x3.data.get()
                 imgfn = '%s/vis_%d_%d.png'%(out_image_dir, epoch,i)
 
                 x_split = F.split_axis(x,vissize,0)
@@ -376,8 +375,12 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                     d1 =  F.softmax(dis(x1,test=True))
                     d2 =  F.softmax(dis2(x1,test=True))
                     def ppr(d):
-                        f = -math.log(float(str(d.data[0,0])))
-                        return '{:0.3}'.format(f)
+                        f = float(str(d.data[0,0]))
+                        if f > 0:
+                            f = -math.log(f)
+                            return '{:0.3}'.format(f)
+                        else:
+                            return '-'
                     ret = '{},{}'.format(ppr(d1),ppr(d2))
                     return ret
 
