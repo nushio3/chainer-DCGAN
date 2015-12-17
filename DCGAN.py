@@ -135,19 +135,24 @@ class Retoucher(chainer.Chain):
             c0 = L.Convolution2D(3, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*3)),
             c1 = L.Convolution2D(64, 128, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
             c2 = L.Convolution2D(128, 256, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
+            c3 = L.Convolution2D(256, 512, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
+            dc3 = L.Deconvolution2D(512, 256, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*256)),
             dc2 = L.Deconvolution2D(256, 128, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*256)),
             dc1 = L.Deconvolution2D(128, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
             dc0 = L.Deconvolution2D(64, 3, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
             bn0 = L.BatchNormalization(64),
             bn1 = L.BatchNormalization(128),
-            bn2 = L.BatchNormalization(256)
+            bn2 = L.BatchNormalization(256),
+            bn3 = L.BatchNormalization(512)
         )
         
     def __call__(self, x, test=False):
         h = elu(self.c0(x))     # no bn because images from generator will katayotteru?
         h = elu(self.bn1(self.c1(h), test=test))
         h = elu(self.bn2(self.c2(h), test=test))
+        h = elu(self.bn3(self.c3(h), test=test))
 
+        h = F.relu(self.bn2(self.dc3(h), test=test))
         h = F.relu(self.bn1(self.dc2(h), test=test))
         h = F.relu(self.bn0(self.dc1(h), test=test))
         y = (self.dc0(h))
@@ -293,26 +298,38 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             x.unchain_backward()
             x2.unchain_backward()
 
-            x3=retou(x)       # let the retoucher make the generated image better
-            yl1st = dis(x3)   # and try deceive the discriminator
-            yl2nd = dis2(x3)  # and try deceive the discriminator2
-            
-            L_retou = F.softmax_cross_entropy(yl1st, Variable(xp.zeros(batchsize, dtype=np.int32)))
-            L_retou += F.softmax_cross_entropy(yl2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
-            L_dis2 = F.softmax_cross_entropy(yl2nd, Variable(xp.ones(batchsize, dtype=np.int32)))
-            
-            # train discriminator2 with the teacher images.
-                    
-            yl2 = dis2(x2)
-            L_dis2 += F.softmax_cross_entropy(yl2, Variable(xp.zeros(batchsize, dtype=np.int32)))
+            x3 = x
+            retouch_magic_touch_go = 10
+            last_total_loss = 1.2e99
+            while retouch_magic_touch_go>0:
+                x3=retou(x3)       # let the retoucher make the generated image better
+                yl1st = dis(x3)   # and try deceive the discriminator
+                yl2nd = dis2(x3)  # and try deceive the discriminator2
+                
+                L_retou = F.softmax_cross_entropy(yl1st, Variable(xp.zeros(batchsize, dtype=np.int32)))
+                L_retou += F.softmax_cross_entropy(yl2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
+                L_dis2 = F.softmax_cross_entropy(yl2nd, Variable(xp.ones(batchsize, dtype=np.int32)))
+                
+                # train discriminator2 with the teacher images.
+                        
+                yl2 = dis2(x2)
+                L_dis2 += F.softmax_cross_entropy(yl2, Variable(xp.zeros(batchsize, dtype=np.int32)))
+    
+                o_retou.zero_grads()
+                L_retou.backward()
+                o_retou.update()
+                
+                o_dis2.zero_grads()
+                L_dis2.backward()
+                o_dis2.update()
 
-            o_retou.zero_grads()
-            L_retou.backward()
-            o_retou.update()
-            
-            o_dis2.zero_grads()
-            L_dis2.backward()
-            o_dis2.update()
+
+                total_loss = float(str((L_retou + L_dis2).data))
+                if total_loss >= last_total_loss:
+                    retouch_magic_touch_go -= 1
+                last_total_loss = total_loss
+                print retouch_magic_touch_go, total_loss
+                x3.unchain_backward()
 
 
             if i%image_save_interval==0:
@@ -325,27 +342,35 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 z = Variable(z)
                 x = gen(z, test=True)
                 x3 = retou(x, test=True)
-                x = x.data.get()
-                x3 = x3.data.get()
+                x_data = x.data.get()
+                x3_data = x3.data.get()
                 imgfn = '%s/vis_%d_%d.png'%(out_image_dir, epoch,i)
+
+                x = F.split_axis(x,vissize,0)
+                x3 = F.split_axis(x3,vissize,0)
 
                 print imgfn
 
-                def totitle(x):
-                    return str(x)[0:6]
+                def mktitle(x1):
+                    d1 =  F.softmax_cross_entropy(dis(x1,test=True), Variable(xp.zeros(1, dtype=np.int32)))
+                    d2 =  F.softmax_cross_entropy(dis2(x1,test=True), Variable(xp.zeros(1, dtype=np.int32)))
+                    def ppr(f):
+                        return int(1e3*min(1,max(0,float(str(f)))))
+                    ret = '{},{}'.format(ppr(d1.data),ppr(d2.data))
+                    return ret
 
                 for i_ in range(100):
-                    tmp = ((np.vectorize(clip_img)(x[i_,:,:,:])+1)/2).transpose(1,2,0)
+                    tmp = ((np.vectorize(clip_img)(x_data[i_,:,:,:])+1)/2).transpose(1,2,0)
                     plt.subplot(20,10,i_+1)
                     plt.imshow(tmp)
                     plt.axis('off')
-                    plt.title(totitle(z.data[i_,0]))
+                    plt.title(mktitle(x[i_]))
                 for i_ in range(100):
-                    tmp = ((np.vectorize(clip_img)(x3[i_,:,:,:])+1)/2).transpose(1,2,0)
+                    tmp = ((np.vectorize(clip_img)(x3_data[i_,:,:,:])+1)/2).transpose(1,2,0)
                     plt.subplot(20,10,i_+101)
                     plt.imshow(tmp)
                     plt.axis('off')
-                    plt.title(totitle(z.data[i_,0])+'kai')
+                    plt.title(mktitle(x3[i_]))
                 plt.suptitle(imgfn)
                 plt.savefig(imgfn)
 
