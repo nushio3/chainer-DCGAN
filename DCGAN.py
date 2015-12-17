@@ -264,7 +264,6 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
     x_retouched = None
     retouch_fail_count = 0
     last_retouch_loss = 1.2e99
-
     
     for epoch in xrange(epoch0,n_epoch):
         print "epoch:", epoch
@@ -292,13 +291,13 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             
             # train discriminator
             x_train = Variable(cuda.to_gpu(x_train))
-            yl2 = dis(x_train)
-            L_dis += F.softmax_cross_entropy(yl2, Variable(xp.zeros(batchsize, dtype=np.int32)))
+            yl_train = dis(x_train)
+            L_dis += F.softmax_cross_entropy(yl_train, Variable(xp.zeros(batchsize, dtype=np.int32)))
             
             
 
             #train retoucher
-            if type(x_retouched)==type(None) or retouch_fail_count > 10:
+            if type(x_retouched)==type(None) or retouch_fail_count >= (1 if epoch==0 else 10):
                 print "Supply new motifs to retoucher."
                 x_retouched = x
                 retouch_fail_count = 0
@@ -316,8 +315,8 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             L_dis2  = F.softmax_cross_entropy(yl2nd, Variable(xp.ones(batchsize, dtype=np.int32)))
             
             # train discriminator2 with the true images.
-            yl2_2nd = dis2(x_train)
-            L_dis2 += F.softmax_cross_entropy(yl2_2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
+            yl_train_2nd = dis2(x_train)
+            L_dis2 += F.softmax_cross_entropy(yl_train_2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
     
             o_gen.zero_grads()
             L_gen.backward()
