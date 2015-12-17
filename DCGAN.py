@@ -40,7 +40,7 @@ nz = 100          # # of dim for Z
 batchsize=25
 n_epoch=10000
 n_train=200000
-image_save_interval = 50000
+image_save_interval = 500
 
 # read all images
 
@@ -136,6 +136,8 @@ class Retoucher(chainer.Chain):
             c1 = L.Convolution2D(64, 128, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
             c2 = L.Convolution2D(128, 256, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
             c3 = L.Convolution2D(256, 512, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
+            c4 = L.Convolution2D(512, 1024, 6, stride=1, pad=0, wscale=0.02*math.sqrt(4*4*128)),
+            dc4 = L.Deconvolution2D(1024,512, 6, stride=1, pad=0, wscale=0.02*math.sqrt(4*4*256)),
             dc3 = L.Deconvolution2D(512, 256, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*256)),
             dc2 = L.Deconvolution2D(256, 128, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*256)),
             dc1 = L.Deconvolution2D(128, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
@@ -143,18 +145,21 @@ class Retoucher(chainer.Chain):
             bn0 = L.BatchNormalization(64),
             bn1 = L.BatchNormalization(128),
             bn2 = L.BatchNormalization(256),
-            bn3 = L.BatchNormalization(512)
+            bn3 = L.BatchNormalization(512),
+            bn4 = L.BatchNormalization(1024)
         )
         
     def __call__(self, x, test=False):
-        h = elu(self.c0(x))     # no bn because images from generator will katayotteru?
-        h = elu(self.bn1(self.c1(h), test=test))
-        h = elu(self.bn2(self.c2(h), test=test))
-        h = elu(self.bn3(self.c3(h), test=test))
-
-        h = F.relu(self.bn2(self.dc3(h), test=test))
-        h = F.relu(self.bn1(self.dc2(h), test=test))
-        h = F.relu(self.bn0(self.dc1(h), test=test))
+        h48 = elu(self.c0(x))     # no bn because images from generator will katayotteru?
+        h24 = elu(self.bn1(self.c1(h48), test=test))
+        h12 = elu(self.bn2(self.c2(h24), test=test))
+        h6 = elu(self.bn3(self.c3(h12), test=test))
+        h1 = elu(self.bn4(self.c4(h6), test=test))
+        
+        h = h6 + 1e-1*F.relu(self.bn3(self.dc4(h1), test=test))
+        h = h12 + 1e-1*F.relu(self.bn2(self.dc3(h), test=test))
+        h = h24 + 1e-1*F.relu(self.bn1(self.dc2(h), test=test))
+        h = h48 + 1e-1*F.relu(self.bn0(self.dc1(h), test=test))
         y = (self.dc0(h))
         return x+1e-2*y
 
@@ -237,7 +242,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
         sum_l_gen = np.float32(0)
         
         for i in xrange(0, n_train, batchsize):
-            print i,
+            print "train:",i
             # discriminator
             # 0: from dataset
             # 1: from noise
@@ -328,12 +333,12 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 if total_loss >= last_total_loss:
                     retouch_magic_touch_go -= 1
                 last_total_loss = total_loss
-                print retouch_magic_touch_go, total_loss
+                print "retouch:",epoch,i,retouch_magic_touch_go, total_loss
                 x3.unchain_backward()
 
 
             if i%image_save_interval==0:
-                plt.rcParams['figure.figsize'] = (16.0,32.0)
+                plt.rcParams['figure.figsize'] = (16.0,64.0)
                 plt.close('all')
                 
                 vissize = 100
@@ -341,15 +346,12 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 z[50:,:] = (xp.random.uniform(-1, 1, (50, nz), dtype=np.float32))
                 z = Variable(z)
                 x = gen(z, test=True)
-                x3 = retou(x, test=True)
                 x_data = x.data.get()
                 x3_data = x3.data.get()
                 imgfn = '%s/vis_%d_%d.png'%(out_image_dir, epoch,i)
 
-                x = F.split_axis(x,vissize,0)
-                x3 = F.split_axis(x3,vissize,0)
+                x_split = F.split_axis(x,vissize,0)
 
-                print imgfn
 
                 def mktitle(x1):
                     d1 =  F.softmax_cross_entropy(dis(x1,test=True), Variable(xp.zeros(1, dtype=np.int32)))
@@ -361,18 +363,31 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
 
                 for i_ in range(100):
                     tmp = ((np.vectorize(clip_img)(x_data[i_,:,:,:])+1)/2).transpose(1,2,0)
-                    plt.subplot(20,10,i_+1)
+                    plt.subplot(43,10,i_+1)
                     plt.imshow(tmp)
                     plt.axis('off')
-                    plt.title(mktitle(x[i_]))
-                for i_ in range(100):
-                    tmp = ((np.vectorize(clip_img)(x3_data[i_,:,:,:])+1)/2).transpose(1,2,0)
-                    plt.subplot(20,10,i_+101)
-                    plt.imshow(tmp)
-                    plt.axis('off')
-                    plt.title(mktitle(x3[i_]))
+                    plt.title(mktitle(x_split[i_]))
+
+                r_p_cnt = 0
+                print "vis-retouch:",
+                for cnt in [5,15,45]:
+                    r_p_cnt+=1
+                    for r_cnt in range(cnt):
+                        print r_cnt,
+                        x.unchain_backward()
+                        x = retou(x, test=True)
+                    x3_data = x.data.get()
+                    x3_split = F.split_axis(x,vissize,0)
+                    
+                    for i_ in range(100):
+                        tmp = ((np.vectorize(clip_img)(x3_data[i_,:,:,:])+1)/2).transpose(1,2,0)
+                        plt.subplot(43,10,i_+1+110*r_p_cnt)
+                        plt.imshow(tmp)
+                        plt.axis('off')
+                        plt.title(mktitle(x3_split[i_]))
                 plt.suptitle(imgfn)
                 plt.savefig(imgfn)
+                print imgfn
 
                 subprocess.call("cp %s ~/public_html/dcgan-%d.png"%(imgfn,args.gpu),shell=True)
         serializers.save_hdf5("%s/dcgan_model_dis_%d.h5"%(out_model_dir, epoch),dis)
