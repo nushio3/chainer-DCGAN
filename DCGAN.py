@@ -261,7 +261,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
 
     zvis = (xp.random.uniform(-1, 1, (100, nz), dtype=np.float32))
 
-    x_retouched = None
+    x_retouch_motif = None
     retouch_fail_count = 0
     last_retouch_loss = 1.2e99
     
@@ -297,15 +297,15 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             
 
             #train retoucher
-            if type(x_retouched)==type(None) or retouch_fail_count >= (1 if epoch==0 else 10):
+            if type(x_retouch_motif)==type(None) or retouch_fail_count >= (1 if epoch==0 else 10):
                 print "Supply new motifs to retoucher."
-                x_retouched = x
+                x_retouch_motif = x
                 retouch_fail_count = 0
                 last_retouch_loss = 99e99
 
-            x_retouched=retou(x_retouched)       # let the retoucher make the generated image better
-            yl1st = dis(x_retouched)   # and try deceive the discriminator
-            yl2nd = dis2(x_retouched)  # and try deceive the discriminator2
+            x3=retou(x3)       # let the retoucher make the generated image better
+            yl1st = dis(x3)   # and try deceive the discriminator
+            yl2nd = dis2(x3)  # and try deceive the discriminator2
             
             # retoucher want their image to look like those from dataset(zeros), 
             # while discriminators want to classify them as from noise(ones)
@@ -347,11 +347,15 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             
             x.unchain_backward()
             x_train.unchain_backward()
-            x_retouched.unchain_backward()
+            x3.unchain_backward()
+            x_retouch_motif = x3
+            
             L_gen.unchain_backward()
             L_retou.unchain_backward()
             L_dis.unchain_backward()
             L_dis2.unchain_backward()
+
+
 
             print "epoch:",epoch,"iter:",i,"retouch:",retouch_fail_count, retouch_loss
 
