@@ -298,7 +298,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             
 
             #train retoucher
-            if (not x_retouched) or retouch_fail_count > 10:
+            if type(x_retouched)==type(None) or retouch_fail_count > 10:
                 print "Supply new motifs to retoucher."
                 x_retouched = x
                 retouch_fail_count = 0
