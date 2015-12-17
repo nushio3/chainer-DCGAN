@@ -214,7 +214,13 @@ def load_dataset():
                 rnd = np.random.randint(len(dataset))
                 rnd2 = np.random.randint(2)
                 
-                img = np.asarray(Image.open(StringIO(dataset[rnd])).convert('RGB')).astype(np.float32).transpose(2, 0, 1)
+                img=Image.open(StringIO(dataset[rnd])).convert('RGB')
+                img=img.rotate(np.random.random()*10.0-5.0, Image.BICUBIC)
+                w,h=img.size
+                scale = 120.0/min(w,h)*(1.0+0.2*np.random.random())
+                img=img.resize((int(w*scale),int(h*scale)),Image.BICUBIC)
+
+                img = np.asarray(img).astype(np.float32).transpose(2, 0, 1)
                 # offset the image about the center of the image.
                 oy = (img.shape[1]-96)/2
                 ox = (img.shape[2]-96)/2
@@ -352,7 +358,7 @@ def train_dcgan_labeled(gen, retou, dis, epoch0=0):
 
 
 
-            print "epoch:",epoch,"iter:",i,"retouch:",retouch_fail_count, retouch_loss
+            print "epoch:",epoch,"iter:",i,"softmax:",average_softmax, "retouch:",retouch_fail_count, retouch_loss
 
             if i%image_save_interval==0:
                 plt.rcParams['figure.figsize'] = (16.0,64.0)
