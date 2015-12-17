@@ -28,6 +28,8 @@ import numpy
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', '-g', default=0, type=int,
                     help='GPU ID')
+parser.add_argument('--fresh-start', '-f', action='store_true',
+                    help='Start simulation anew')
 args = parser.parse_args()
 
 
@@ -246,14 +248,26 @@ def load_dataset():
 
 
 def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
-    o_gen = optimizers.Adam(alpha=0.0002, beta1=0.5)
-    o_retou = optimizers.Adam(alpha=0.0002, beta1=0.5)
-    o_dis = optimizers.Adam(alpha=0.0002, beta1=0.5)
-    o_dis2 = optimizers.Adam(alpha=0.0002, beta1=0.5)
-    o_gen.setup(gen)
-    o_retou.setup(retou)
-    o_dis.setup(dis)
-    o_dis2.setup(dis2)
+    if args.fresh_start:
+        o_gen = optimizers.Adam(alpha=0.0002, beta1=0.5)
+        o_retou = optimizers.Adam(alpha=0.0002, beta1=0.5)
+        o_dis = optimizers.Adam(alpha=0.0002, beta1=0.5)
+        o_dis2 = optimizers.Adam(alpha=0.0002, beta1=0.5)
+        o_gen.setup(gen)
+        o_retou.setup(retou)
+        o_dis.setup(dis)
+        o_dis2.setup(dis2)
+    else:
+        serializers.load_hdf5("%s/dcgan_model_dis.h5"%(out_model_dir),dis)
+        serializers.load_hdf5("%s/dcgan_model_dis2.h5"%(out_model_dir),dis2)
+        serializers.load_hdf5("%s/dcgan_model_gen.h5"%(out_model_dir),gen)
+        serializers.load_hdf5("%s/dcgan_model_retou.h5"%(out_model_dir),retou)
+        serializers.load_hdf5("%s/dcgan_state_dis.h5"%(out_model_dir),o_dis)
+        serializers.load_hdf5("%s/dcgan_state_dis2.h5"%(out_model_dir),o_dis2)
+        serializers.load_hdf5("%s/dcgan_state_gen.h5"%(out_model_dir),o_gen)
+        serializers.load_hdf5("%s/dcgan_state_retou.h5"%(out_model_dir),o_retou)
+
+
     o_gen.add_hook(chainer.optimizer.WeightDecay(0.00001))
     o_retou.add_hook(chainer.optimizer.WeightDecay(0.00001))
     o_dis.add_hook(chainer.optimizer.WeightDecay(0.00001))
@@ -396,7 +410,7 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
 
                 r_p_cnt = 0
                 print "vis-retouch:",
-                for cnt in [5,15,45]:
+                for cnt in [1,1,1]:
                     r_p_cnt+=1
                     for r_cnt in range(cnt):
                         print r_cnt,
@@ -417,14 +431,21 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 print imgfn
 
                 subprocess.call("cp %s ~/public_html/dcgan-%d.png"%(imgfn,args.gpu),shell=True)
-        serializers.save_hdf5("%s/dcgan_model_dis_%d.h5"%(out_model_dir, epoch),dis)
-        serializers.save_hdf5("%s/dcgan_model_dis2_%d.h5"%(out_model_dir, epoch),dis2)
-        serializers.save_hdf5("%s/dcgan_model_gen_%d.h5"%(out_model_dir, epoch),gen)
-        serializers.save_hdf5("%s/dcgan_model_retou_%d.h5"%(out_model_dir, epoch),retou)
-        serializers.save_hdf5("%s/dcgan_state_dis_%d.h5"%(out_model_dir, epoch),o_dis)
-        serializers.save_hdf5("%s/dcgan_state_dis2_%d.h5"%(out_model_dir, epoch),o_dis2)
-        serializers.save_hdf5("%s/dcgan_state_gen_%d.h5"%(out_model_dir, epoch),o_gen)
-        serializers.save_hdf5("%s/dcgan_state_retou_%d.h5"%(out_model_dir, epoch),o_retou)
+
+                serializers.save_hdf5("%s/dcgan_model_dis.h5"%(out_model_dir),dis)
+                serializers.save_hdf5("%s/dcgan_model_dis2.h5"%(out_model_dir),dis2)
+                serializers.save_hdf5("%s/dcgan_model_gen.h5"%(out_model_dir),gen)
+                serializers.save_hdf5("%s/dcgan_model_retou.h5"%(out_model_dir),retou)
+                serializers.save_hdf5("%s/dcgan_state_dis.h5"%(out_model_dir),o_dis)
+                serializers.save_hdf5("%s/dcgan_state_dis2.h5"%(out_model_dir),o_dis2)
+                serializers.save_hdf5("%s/dcgan_state_gen.h5"%(out_model_dir),o_gen)
+                serializers.save_hdf5("%s/dcgan_state_retou.h5"%(out_model_dir),o_retou)
+                
+                history_dir = 'history/%d-%d'%(epoch,  i)
+                subprocess.call("mkdir -p %s "%(history_dir),shell=True)
+                subprocess.call("cp %s/*.h5 %s "%(out_model_dir,history_dir),shell=True)
+
+
         print 'epoch end', epoch, sum_l_gen/n_train, sum_l_dis/n_train
 
 
