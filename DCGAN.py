@@ -198,25 +198,6 @@ class Discriminator(chainer.Chain):
         return l
 
 
-class Discriminator2(chainer.Chain):
-    def __init__(self):
-        super(Discriminator2, self).__init__(
-            c0 = L.Convolution2D(3, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*3)),
-            c1 = L.Convolution2D(64, 128, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
-            c2 = L.Convolution2D(128, 256, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
-            l4l = L.Linear(256, 2, wscale=0.02*math.sqrt(6*6*512)),
-            bn0 = L.BatchNormalization(64),
-            bn1 = L.BatchNormalization(128),
-            bn2 = L.BatchNormalization(256),
-        )
-        
-    def __call__(self, x, test=False):
-        h = elu(self.c0(x))     # no bn because images from generator will katayotteru?
-        h = elu(self.bn1(self.c1(h), test=test))
-        h = elu(self.bn2(self.c2(h), test=test))
-        l = self.l4l(F.sum(h,(2,3)))
-        return l
-
 
 
 
@@ -251,22 +232,18 @@ def load_dataset():
     return x2
 
 
-def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
+def train_dcgan_labeled(gen, retou, dis, epoch0=0):
     o_gen = optimizers.Adam(alpha=0.0002, beta1=0.5)
     o_retou = optimizers.Adam(alpha=0.0002, beta1=0.5)
     o_dis = optimizers.Adam(alpha=0.0002, beta1=0.5)
-    o_dis2 = optimizers.Adam(alpha=0.0002, beta1=0.5)
     o_gen.setup(gen)
     o_retou.setup(retou)
     o_dis.setup(dis)
-    o_dis2.setup(dis2)
     if not args.fresh_start:
         serializers.load_hdf5("%s/dcgan_model_dis.h5"%(out_model_dir),dis)
-        serializers.load_hdf5("%s/dcgan_model_dis2.h5"%(out_model_dir),dis2)
         serializers.load_hdf5("%s/dcgan_model_gen.h5"%(out_model_dir),gen)
         serializers.load_hdf5("%s/dcgan_model_retou.h5"%(out_model_dir),retou)
         serializers.load_hdf5("%s/dcgan_state_dis.h5"%(out_model_dir),o_dis)
-        serializers.load_hdf5("%s/dcgan_state_dis2.h5"%(out_model_dir),o_dis2)
         serializers.load_hdf5("%s/dcgan_state_gen.h5"%(out_model_dir),o_gen)
         serializers.load_hdf5("%s/dcgan_state_retou.h5"%(out_model_dir),o_retou)
 
@@ -274,7 +251,6 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
     o_gen.add_hook(chainer.optimizer.WeightDecay(0.00001))
     o_retou.add_hook(chainer.optimizer.WeightDecay(0.00001))
     o_dis.add_hook(chainer.optimizer.WeightDecay(0.00001))
-    o_dis2.add_hook(chainer.optimizer.WeightDecay(0.00001))
 
     zvis = (xp.random.uniform(-1, 1, (100, nz), dtype=np.float32))
 
@@ -322,18 +298,12 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
 
             x3=retou(x_retouch_motif)  # let the retoucher make the generated image better
             yl1st = dis(x3)   # and try deceive the discriminator
-            yl2nd = dis2(x3)  # and try deceive the discriminator2
             
             # retoucher want their image to look like those from dataset(zeros), 
             # while discriminators want to classify them as from noise(ones)
             L_retou = F.softmax_cross_entropy(yl1st, Variable(xp.zeros(batchsize, dtype=np.int32)))
-            L_retou += F.softmax_cross_entropy(yl2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
             L_dis  += F.softmax_cross_entropy(yl1st, Variable(xp.ones(batchsize, dtype=np.int32)))
-            L_dis2  = F.softmax_cross_entropy(yl2nd, Variable(xp.ones(batchsize, dtype=np.int32)))
             
-            # train discriminator2 with the true images.
-            yl_train_2nd = dis2(x_train)
-            L_dis2 += F.softmax_cross_entropy(yl_train_2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
     
             o_gen.zero_grads()
             L_gen.backward()
@@ -346,10 +316,6 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             o_dis.zero_grads()
             L_dis.backward()
             o_dis.update()
-
-            o_dis2.zero_grads()
-            L_dis2.backward()
-            o_dis2.update()
 
 
             retouch_loss = float(str((L_retou).data))
@@ -370,7 +336,6 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             L_gen.unchain_backward()
             L_retou.unchain_backward()
             L_dis.unchain_backward()
-            L_dis2.unchain_backward()
 
 
 
@@ -393,11 +358,10 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
 
                 def mktitle(x1):
                     d1 =  F.softmax(dis(x1,test=True))
-                    d2 =  F.softmax(dis2(x1,test=True))
                     def ppr(d):
                         f = float(str(d.data[0,0]))
                         return '{:0.3}'.format(f)
-                    ret = '{},{}'.format(ppr(d1),ppr(d2))
+                    ret = '{}'.format(ppr(d1))
                     return ret
 
                 for i_ in range(100):
@@ -432,11 +396,9 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 subprocess.call("cp %s ~/public_html/dcgan-%d.png"%(imgfn,args.gpu),shell=True)
 
                 serializers.save_hdf5("%s/dcgan_model_dis.h5"%(out_model_dir),dis)
-                serializers.save_hdf5("%s/dcgan_model_dis2.h5"%(out_model_dir),dis2)
                 serializers.save_hdf5("%s/dcgan_model_gen.h5"%(out_model_dir),gen)
                 serializers.save_hdf5("%s/dcgan_model_retou.h5"%(out_model_dir),retou)
                 serializers.save_hdf5("%s/dcgan_state_dis.h5"%(out_model_dir),o_dis)
-                serializers.save_hdf5("%s/dcgan_state_dis2.h5"%(out_model_dir),o_dis2)
                 serializers.save_hdf5("%s/dcgan_state_gen.h5"%(out_model_dir),o_gen)
                 serializers.save_hdf5("%s/dcgan_state_retou.h5"%(out_model_dir),o_retou)
                 
@@ -456,11 +418,9 @@ cuda.get_device(int(args.gpu)).use()
 gen = Generator()
 retou = Retoucher()
 dis = Discriminator()
-dis2 = Discriminator2()
 gen.to_gpu()
 retou.to_gpu()
 dis.to_gpu()
-dis2.to_gpu()
 
 
 try:
@@ -469,4 +429,4 @@ try:
 except:
     pass
 
-train_dcgan_labeled(gen, retou, dis, dis2)
+train_dcgan_labeled(gen, retou, dis)
