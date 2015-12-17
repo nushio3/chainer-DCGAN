@@ -248,16 +248,15 @@ def load_dataset():
 
 
 def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
-    if args.fresh_start:
-        o_gen = optimizers.Adam(alpha=0.0002, beta1=0.5)
-        o_retou = optimizers.Adam(alpha=0.0002, beta1=0.5)
-        o_dis = optimizers.Adam(alpha=0.0002, beta1=0.5)
-        o_dis2 = optimizers.Adam(alpha=0.0002, beta1=0.5)
-        o_gen.setup(gen)
-        o_retou.setup(retou)
-        o_dis.setup(dis)
-        o_dis2.setup(dis2)
-    else:
+    o_gen = optimizers.Adam(alpha=0.0002, beta1=0.5)
+    o_retou = optimizers.Adam(alpha=0.0002, beta1=0.5)
+    o_dis = optimizers.Adam(alpha=0.0002, beta1=0.5)
+    o_dis2 = optimizers.Adam(alpha=0.0002, beta1=0.5)
+    o_gen.setup(gen)
+    o_retou.setup(retou)
+    o_dis.setup(dis)
+    o_dis2.setup(dis2)
+    if not args.fresh_start:
         serializers.load_hdf5("%s/dcgan_model_dis.h5"%(out_model_dir),dis)
         serializers.load_hdf5("%s/dcgan_model_dis2.h5"%(out_model_dir),dis2)
         serializers.load_hdf5("%s/dcgan_model_gen.h5"%(out_model_dir),gen)
