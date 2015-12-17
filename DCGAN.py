@@ -371,11 +371,12 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
 
 
                 def mktitle(x1):
-                    d1 = -F.log( F.softmax(dis(x1,test=True), Variable(xp.zeros(1, dtype=np.int32))))
-                    d2 = -F.log( F.softmax(dis2(x1,test=True), Variable(xp.zeros(1, dtype=np.int32))))
-                    def ppr(f):
-                        return '{:0.3}'.format(float(str(f)))
-                    ret = '{},{}'.format(ppr(d1.data),ppr(d2.data))
+                    d1 =  F.softmax(dis(x1,test=True))
+                    d2 =  F.softmax(dis2(x1,test=True))
+                    def ppr(d):
+                        f = -math.log(float(str(d.data[0,0])))
+                        return '{:0.3}'.format(f)
+                    ret = '{},{}'.format(ppr(d1),ppr(d2))
                     return ret
 
                 for i_ in range(100):
