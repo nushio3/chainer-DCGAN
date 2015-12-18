@@ -147,7 +147,8 @@ class Retoucher(chainer.Chain):
             dc3 = L.Deconvolution2D(512, 256, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*512)),
             dc2 = L.Deconvolution2D(256, 128, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*256)),
             dc1 = L.Deconvolution2D(128, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
-            dc0 = L.Deconvolution2D(64, 3, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
+            dc0 = L.Deconvolution2D(64, 4, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
+            # Note: create RGBA image as final patch
             bn0 = L.BatchNormalization(64),
             bn1 = L.BatchNormalization(128),
             bn2 = L.BatchNormalization(256),
@@ -166,8 +167,11 @@ class Retoucher(chainer.Chain):
         h = h12 + 1e-1*F.relu(self.bn2(self.dc3(h), test=test))
         h = h24 + 1e-1*F.relu(self.bn1(self.dc2(h), test=test))
         h = h48 + 1e-1*F.relu(self.bn0(self.dc1(h), test=test))
-        y = (self.dc0(h))
-        return 0.9*x+1e-2*y
+        patch = 1e-1*self.dc0(h)
+        # no final bn because final patch will be arbitrary strong/weak
+        patch_rgb, patch_alpha = F.split_axis(patch,[3],1)
+        alpha_channel = F.concat(3*[patch_alpha])
+        return (1-alpha_channel)*x + alpha_channel * patch_rgb
 
 
 
@@ -361,7 +365,7 @@ def train_dcgan_labeled(gen, retou, dis, epoch0=0):
             print "epoch:",epoch,"iter:",i,"softmax:",average_softmax, "retouch:",retouch_fail_count, retouch_loss
 
             if i%image_save_interval==0:
-                n_retou=6
+                n_retou=2
 
                 plt.rcParams['figure.figsize'] = (16.0,16.0*n_retou)
                 plt.close('all')
@@ -395,9 +399,9 @@ def train_dcgan_labeled(gen, retou, dis, epoch0=0):
 
                 r_p_cnt = 0
                 print "vis-retouch:",
-                for cnt in [1,1,1,1,1]:
+                for cnt_step in (n_retou-1) * [1]:
                     r_p_cnt+=1
-                    for r_cnt in range(cnt):
+                    for r_cnt in range(cnt_step):
                         print r_cnt,
                         sys.stdout.flush()
                         x.unchain_backward()
