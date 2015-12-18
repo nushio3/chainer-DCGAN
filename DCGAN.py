@@ -298,6 +298,14 @@ def train_dcgan_labeled(gen, retou, dis, epoch0=0):
 
             softmax_gen = F.softmax(yl).data[:,0]
             average_softmax=np.average(cuda.to_cpu(softmax_gen))
+            if math.isnan(average_softmax) : 
+                serializers.save_hdf5("%s/NaN_dcgan_model_dis.h5"%(out_model_dir),dis)
+                serializers.save_hdf5("%s/NaN_dcgan_model_gen.h5"%(out_model_dir),gen)
+                serializers.save_hdf5("%s/NaN_dcgan_model_retou.h5"%(out_model_dir),retou)
+                serializers.save_hdf5("%s/NaN_dcgan_state_dis.h5"%(out_model_dir),o_dis)
+                serializers.save_hdf5("%s/NaN_dcgan_state_gen.h5"%(out_model_dir),o_gen)
+                serializers.save_hdf5("%s/NaN_dcgan_state_retou.h5"%(out_model_dir),o_retou)
+                exit()
             if average_softmax < 1e-3:
                 train_sample_factor = 10.0
             elif average_softmax < 1e-2:
