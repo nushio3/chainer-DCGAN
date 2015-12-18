@@ -314,6 +314,7 @@ def train_dcgan_labeled(gen, retou, dis, epoch0=0):
                 train_sample_factor = 1.0
             else:
                 train_sample_factor = 2.0
+            train_sample_factor = 2.0
 
             L_dis += train_sample_factor * F.softmax_cross_entropy(yl_train, Variable(xp.zeros(batchsize, dtype=np.int32)))
             
