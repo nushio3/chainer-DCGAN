@@ -53,6 +53,7 @@ print(len(fs))
 sys.stdout.flush()
 dataset = []
 for fn in fs:
+    print(fn)
     f = open('%s/%s'%(image_dir,fn), 'rb')
     img_bin = f.read()
     dataset.append(img_bin)
@@ -193,17 +194,14 @@ def train_dcgan_labeled(gen, dis, epoch0=0):
             #print "load image start ", i
             x2 = np.zeros((batchsize, 3, 96, 96), dtype=np.float32)
             for j in range(batchsize):
-                try:
+                #try:
                     rnd = np.random.randint(len(dataset))
                     rnd2 = np.random.randint(2)
 
-                    img = np.asarray(Image.open(io.StringIO(dataset[rnd])).convert('RGB')).astype(np.float32).transpose(2, 0, 1)
-                    if rnd2==0:
-                        x2[j,:,:,:] = (img[:,:,::-1]-128.0)/128.0
-                    else:
-                        x2[j,:,:,:] = (img[:,:,:]-128.0)/128.0
-                except:
-                    print('read image error occured', fs[rnd])
+                    img = np.asarray(Image.open(io.BytesIO(dataset[rnd])).convert('RGB')).astype(np.float32).transpose(2, 0, 1)
+                    x2[j,:,:,:] = (img[:,0:96,0:96]-128.0)/128.0
+                #except:
+                #    print('read image error occured', fs[rnd])
             #print "load image done"
             
             # train generator
