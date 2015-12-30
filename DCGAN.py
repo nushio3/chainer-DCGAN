@@ -147,7 +147,8 @@ class Retoucher(chainer.Chain):
             dc3 = L.Deconvolution2D(512, 256, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*512)),
             dc2 = L.Deconvolution2D(256, 128, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*256)),
             dc1 = L.Deconvolution2D(128, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
-            dc0 = L.Deconvolution2D(64, 3, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
+            dc0 = L.Deconvolution2D(64, 4, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
+            # Note: create RGBA image as final patch
             bn0 = L.BatchNormalization(64),
             bn1 = L.BatchNormalization(128),
             bn2 = L.BatchNormalization(256),
@@ -166,8 +167,11 @@ class Retoucher(chainer.Chain):
         h = h12 + 1e-1*F.relu(self.bn2(self.dc3(h), test=test))
         h = h24 + 1e-1*F.relu(self.bn1(self.dc2(h), test=test))
         h = h48 + 1e-1*F.relu(self.bn0(self.dc1(h), test=test))
-        y = (self.dc0(h))
-        return x+1e-2*y
+        patch = 1e-1*self.dc0(h)
+        # no final bn because final patch will be arbitrary strong/weak
+        patch_rgb, patch_alpha = F.split_axis(patch,[3],1)
+        alpha_channel = F.concat(3*[patch_alpha])
+        return (1-alpha_channel)*x + alpha_channel * patch_rgb
 
 
 
@@ -198,25 +202,6 @@ class Discriminator(chainer.Chain):
         return l
 
 
-class Discriminator2(chainer.Chain):
-    def __init__(self):
-        super(Discriminator2, self).__init__(
-            c0 = L.Convolution2D(3, 64, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*3)),
-            c1 = L.Convolution2D(64, 128, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*64)),
-            c2 = L.Convolution2D(128, 256, 4, stride=2, pad=1, wscale=0.02*math.sqrt(4*4*128)),
-            l4l = L.Linear(256, 2, wscale=0.02*math.sqrt(6*6*512)),
-            bn0 = L.BatchNormalization(64),
-            bn1 = L.BatchNormalization(128),
-            bn2 = L.BatchNormalization(256),
-        )
-        
-    def __call__(self, x, test=False):
-        h = elu(self.c0(x))     # no bn because images from generator will katayotteru?
-        h = elu(self.bn1(self.c1(h), test=test))
-        h = elu(self.bn2(self.c2(h), test=test))
-        l = self.l4l(F.sum(h,(2,3)))
-        return l
-
 
 
 
@@ -233,7 +218,13 @@ def load_dataset():
                 rnd = np.random.randint(len(dataset))
                 rnd2 = np.random.randint(2)
                 
-                img = np.asarray(Image.open(StringIO(dataset[rnd])).convert('RGB')).astype(np.float32).transpose(2, 0, 1)
+                img=Image.open(StringIO(dataset[rnd])).convert('RGB')
+                img=img.rotate(np.random.random()*10.0-5.0, Image.BICUBIC)
+                w,h=img.size
+                scale = 120.0/min(w,h)*(1.0+0.2*np.random.random())
+                img=img.resize((int(w*scale),int(h*scale)),Image.BICUBIC)
+
+                img = np.asarray(img).astype(np.float32).transpose(2, 0, 1)
                 # offset the image about the center of the image.
                 oy = (img.shape[1]-96)/2
                 ox = (img.shape[2]-96)/2
@@ -251,22 +242,18 @@ def load_dataset():
     return x2
 
 
-def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
+def train_dcgan_labeled(gen, retou, dis, epoch0=0):
     o_gen = optimizers.Adam(alpha=0.0002, beta1=0.5)
     o_retou = optimizers.Adam(alpha=0.0002, beta1=0.5)
     o_dis = optimizers.Adam(alpha=0.0002, beta1=0.5)
-    o_dis2 = optimizers.Adam(alpha=0.0002, beta1=0.5)
     o_gen.setup(gen)
     o_retou.setup(retou)
     o_dis.setup(dis)
-    o_dis2.setup(dis2)
     if not args.fresh_start:
         serializers.load_hdf5("%s/dcgan_model_dis.h5"%(out_model_dir),dis)
-        serializers.load_hdf5("%s/dcgan_model_dis2.h5"%(out_model_dir),dis2)
         serializers.load_hdf5("%s/dcgan_model_gen.h5"%(out_model_dir),gen)
         serializers.load_hdf5("%s/dcgan_model_retou.h5"%(out_model_dir),retou)
         serializers.load_hdf5("%s/dcgan_state_dis.h5"%(out_model_dir),o_dis)
-        serializers.load_hdf5("%s/dcgan_state_dis2.h5"%(out_model_dir),o_dis2)
         serializers.load_hdf5("%s/dcgan_state_gen.h5"%(out_model_dir),o_gen)
         serializers.load_hdf5("%s/dcgan_state_retou.h5"%(out_model_dir),o_retou)
 
@@ -274,7 +261,6 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
     o_gen.add_hook(chainer.optimizer.WeightDecay(0.00001))
     o_retou.add_hook(chainer.optimizer.WeightDecay(0.00001))
     o_dis.add_hook(chainer.optimizer.WeightDecay(0.00001))
-    o_dis2.add_hook(chainer.optimizer.WeightDecay(0.00001))
 
     zvis = (xp.random.uniform(-1, 1, (100, nz), dtype=np.float32))
 
@@ -309,12 +295,34 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             # train discriminator
             x_train = Variable(cuda.to_gpu(x_train))
             yl_train = dis(x_train)
-            L_dis += F.softmax_cross_entropy(yl_train, Variable(xp.zeros(batchsize, dtype=np.int32)))
+
+            softmax_gen = F.softmax(yl).data[:,0]
+            average_softmax=np.average(cuda.to_cpu(softmax_gen))
+            if math.isnan(average_softmax) : 
+                serializers.save_hdf5("%s/NaN_dcgan_model_dis.h5"%(out_model_dir),dis)
+                serializers.save_hdf5("%s/NaN_dcgan_model_gen.h5"%(out_model_dir),gen)
+                serializers.save_hdf5("%s/NaN_dcgan_model_retou.h5"%(out_model_dir),retou)
+                serializers.save_hdf5("%s/NaN_dcgan_state_dis.h5"%(out_model_dir),o_dis)
+                serializers.save_hdf5("%s/NaN_dcgan_state_gen.h5"%(out_model_dir),o_gen)
+                serializers.save_hdf5("%s/NaN_dcgan_state_retou.h5"%(out_model_dir),o_retou)
+                exit()
+            if average_softmax < 1e-3:
+                train_sample_factor = 10.0
+            elif average_softmax < 1e-2:
+                train_sample_factor = 4.0
+            elif average_softmax > 0.4:
+                train_sample_factor = 1.0
+            else:
+                train_sample_factor = 2.0
+            train_sample_factor = 2.0
+
+            L_dis += train_sample_factor * F.softmax_cross_entropy(yl_train, Variable(xp.zeros(batchsize, dtype=np.int32)))
             
+                
             
 
             #train retoucher
-            if type(x_retouch_motif)==type(None) or retouch_fail_count >= (1 if epoch==0 else 10):
+            if type(x_retouch_motif)==type(None) or retouch_fail_count >= min(1+ epoch, 10):
                 print "Supply new motifs to retoucher."
                 x_retouch_motif = Variable(x.data)
                 retouch_fail_count = 0
@@ -322,18 +330,12 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
 
             x3=retou(x_retouch_motif)  # let the retoucher make the generated image better
             yl1st = dis(x3)   # and try deceive the discriminator
-            yl2nd = dis2(x3)  # and try deceive the discriminator2
             
             # retoucher want their image to look like those from dataset(zeros), 
             # while discriminators want to classify them as from noise(ones)
             L_retou = F.softmax_cross_entropy(yl1st, Variable(xp.zeros(batchsize, dtype=np.int32)))
-            L_retou += F.softmax_cross_entropy(yl2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
             L_dis  += F.softmax_cross_entropy(yl1st, Variable(xp.ones(batchsize, dtype=np.int32)))
-            L_dis2  = F.softmax_cross_entropy(yl2nd, Variable(xp.ones(batchsize, dtype=np.int32)))
             
-            # train discriminator2 with the true images.
-            yl_train_2nd = dis2(x_train)
-            L_dis2 += F.softmax_cross_entropy(yl_train_2nd, Variable(xp.zeros(batchsize, dtype=np.int32)))
     
             o_gen.zero_grads()
             L_gen.backward()
@@ -346,10 +348,6 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             o_dis.zero_grads()
             L_dis.backward()
             o_dis.update()
-
-            o_dis2.zero_grads()
-            L_dis2.backward()
-            o_dis2.update()
 
 
             retouch_loss = float(str((L_retou).data))
@@ -370,16 +368,18 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
             L_gen.unchain_backward()
             L_retou.unchain_backward()
             L_dis.unchain_backward()
-            L_dis2.unchain_backward()
 
 
 
-            print "epoch:",epoch,"iter:",i,"retouch:",retouch_fail_count, retouch_loss
+            print "epoch:",epoch,"iter:",i,"softmax:",average_softmax, "retouch:",retouch_fail_count, retouch_loss
 
             if i%image_save_interval==0:
-                plt.rcParams['figure.figsize'] = (16.0,64.0)
+                n_retou=2
+
+                plt.rcParams['figure.figsize'] = (16.0,16.0*n_retou)
                 plt.close('all')
                 
+
                 vissize = 100
                 z = zvis
                 z[50:,:] = (xp.random.uniform(-1, 1, (50, nz), dtype=np.float32))
@@ -393,25 +393,24 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
 
                 def mktitle(x1):
                     d1 =  F.softmax(dis(x1,test=True))
-                    d2 =  F.softmax(dis2(x1,test=True))
                     def ppr(d):
                         f = float(str(d.data[0,0]))
                         return '{:0.3}'.format(f)
-                    ret = '{},{}'.format(ppr(d1),ppr(d2))
+                    ret = '{}'.format(ppr(d1))
                     return ret
 
                 for i_ in range(100):
                     tmp = ((np.vectorize(clip_img)(x_data[i_,:,:,:])+1)/2).transpose(1,2,0)
-                    plt.subplot(43,10,i_+1)
+                    plt.subplot(n_retou*10+9,10,1+i_%10+(i_/10)*10*(n_retou+1))
                     plt.imshow(tmp)
                     plt.axis('off')
                     plt.title(mktitle(x_split[i_]),fontsize=6)
 
                 r_p_cnt = 0
                 print "vis-retouch:",
-                for cnt in [1,1,1]:
+                for cnt_step in (n_retou-1) * [1]:
                     r_p_cnt+=1
-                    for r_cnt in range(cnt):
+                    for r_cnt in range(cnt_step):
                         print r_cnt,
                         sys.stdout.flush()
                         x.unchain_backward()
@@ -421,7 +420,8 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                     
                     for i_ in range(100):
                         tmp = ((np.vectorize(clip_img)(x3_data[i_,:,:,:])+1)/2).transpose(1,2,0)
-                        plt.subplot(43,10,i_+1+110*r_p_cnt)
+
+                        plt.subplot(n_retou*10+9,10,1+i_%10+(i_/10)*10*(n_retou+1)+10*r_p_cnt)
                         plt.imshow(tmp)
                         plt.axis('off')
                         plt.title(mktitle(x3_split[i_]),fontsize=6)
@@ -432,11 +432,9 @@ def train_dcgan_labeled(gen, retou, dis, dis2, epoch0=0):
                 subprocess.call("cp %s ~/public_html/dcgan-%d.png"%(imgfn,args.gpu),shell=True)
 
                 serializers.save_hdf5("%s/dcgan_model_dis.h5"%(out_model_dir),dis)
-                serializers.save_hdf5("%s/dcgan_model_dis2.h5"%(out_model_dir),dis2)
                 serializers.save_hdf5("%s/dcgan_model_gen.h5"%(out_model_dir),gen)
                 serializers.save_hdf5("%s/dcgan_model_retou.h5"%(out_model_dir),retou)
                 serializers.save_hdf5("%s/dcgan_state_dis.h5"%(out_model_dir),o_dis)
-                serializers.save_hdf5("%s/dcgan_state_dis2.h5"%(out_model_dir),o_dis2)
                 serializers.save_hdf5("%s/dcgan_state_gen.h5"%(out_model_dir),o_gen)
                 serializers.save_hdf5("%s/dcgan_state_retou.h5"%(out_model_dir),o_retou)
                 
@@ -456,11 +454,9 @@ cuda.get_device(int(args.gpu)).use()
 gen = Generator()
 retou = Retoucher()
 dis = Discriminator()
-dis2 = Discriminator2()
 gen.to_gpu()
 retou.to_gpu()
 dis.to_gpu()
-dis2.to_gpu()
 
 
 try:
@@ -469,4 +465,4 @@ try:
 except:
     pass
 
-train_dcgan_labeled(gen, retou, dis, dis2)
+train_dcgan_labeled(gen, retou, dis)
